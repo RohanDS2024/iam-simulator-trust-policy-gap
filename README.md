@@ -7,6 +7,13 @@ This affects defenders who use the simulator to validate trust-policy controls �
 Verified across **11 test cases** spanning four condition operators, three condition keys, two STS action variants, four trust-policy structural patterns, and three independent AWS-native evaluation surfaces. See [`EXTENDED_TESTS.md`](./EXTENDED_TESTS.md) for the full matrix and raw output.
 
 **Discovered:** May 2026
+## Disclosure status
+
+- **GitHub issue**: [aws/aws-cli#10314](https://github.com/aws/aws-cli/issues/10314) — filed 2026-05-15
+- **AWS Support ticket**: _pending_
+- **AWS response**: _awaiting triage_
+
+Updates will be posted here as the disclosure progresses.
 **Author:** Rohan Devikoppa Shreedhara — [GitHub](https://github.com/RohanDS2024) · [LinkedIn](https://www.linkedin.com/in/rohan-devikoppa-shreedhara-97a192216/)
 
 ---
