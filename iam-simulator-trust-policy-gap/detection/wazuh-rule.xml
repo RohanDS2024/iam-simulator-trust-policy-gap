@@ -1,0 +1,86 @@
+<!--
+  Wazuh ruleset: AWS trust-policy-rewrite privilege escalation
+  ------------------------------------------------------------
+  Detects iam:UpdateAssumeRolePolicy followed within 10 minutes by sts:AssumeRole
+  on the same role by the same principal.
+
+  Prerequisite: Wazuh AWS integration ingesting CloudTrail logs into
+  /var/ossec/logs/aws/ via wodle-aws or the AWS S3 module, with JSON decoding
+  enabled.
+
+  Place in: /var/ossec/etc/rules/local_iam_privesc_rules.xml
+
+  Tested decoder field paths align with the AWS CloudTrail JSON structure as
+  decoded by Wazuh 4.x. Adjust field names if your decoder differs.
+-->
+
+<group name="aws,cloudtrail,iam_privesc,">
+
+  <!--
+    Rule 100001: Trust policy modification (single event, informational).
+    Fires on every iam:UpdateAssumeRolePolicy. Used as the seed event for
+    rule 100002 below.
+  -->
+  <rule id="100001" level="8">
+    <decoded_as>json</decoded_as>
+    <field name="aws.eventSource">iam.amazonaws.com</field>
+    <field name="aws.eventName">UpdateAssumeRolePolicy</field>
+    <description>AWS IAM: Trust policy modified on role $(aws.requestParameters.roleName) by $(aws.userIdentity.arn) from $(aws.sourceIPAddress)</description>
+    <group>iam_privesc,trust_policy_change,attack.t1098.001,</group>
+  </rule>
+
+  <!--
+    Rule 100002: Trust policy modification followed by AssumeRole on the same
+    role by the same principal within 10 minutes (600 seconds).
+    HIGH severity — this is the canonical bypass pattern.
+  -->
+  <rule id="100002" level="13" frequency="2" timeframe="600">
+    <if_matched_sid>100001</if_matched_sid>
+    <decoded_as>json</decoded_as>
+    <field name="aws.eventSource">sts.amazonaws.com</field>
+    <field name="aws.eventName">AssumeRole</field>
+    <same_field>aws.userIdentity.arn</same_field>
+    <description>AWS IAM PRIVESC: Principal $(aws.userIdentity.arn) modified a trust policy and assumed the role within 10 minutes — likely trust-policy-rewrite escalation</description>
+    <group>iam_privesc,attack.t1098.001,attack.t1548.005,</group>
+  </rule>
+
+  <!--
+    Rule 100003: UpdateAssumeRolePolicy by a session that was itself NOT
+    MFA-authenticated. Often an early indicator of compromise via stolen
+    long-term credentials.
+  -->
+  <rule id="100003" level="10">
+    <if_sid>100001</if_sid>
+    <field name="aws.userIdentity.sessionContext.attributes.mfaAuthenticated">false</field>
+    <description>AWS IAM: Trust policy modified by a NON-MFA session ($(aws.userIdentity.arn)) — possible stolen long-term credentials</description>
+    <group>iam_privesc,no_mfa,attack.t1098.001,</group>
+  </rule>
+
+  <!--
+    Rule 100004: AssumeRole on a sensitive role by a non-MFA session.
+    Tune the role name pattern to your environment's privileged roles.
+    Useful as a complement to enforcing MFA in trust-policy conditions.
+  -->
+  <rule id="100004" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="aws.eventSource">sts.amazonaws.com</field>
+    <field name="aws.eventName">AssumeRole</field>
+    <field name="aws.requestParameters.roleArn">.*role/.*(admin|privileged|break-glass|root).*</field>
+    <field name="aws.userIdentity.sessionContext.attributes.mfaAuthenticated">false</field>
+    <description>AWS STS: Sensitive role assumed by a NON-MFA session — verify trust policy enforcement</description>
+    <group>iam_privesc,no_mfa,sensitive_role,</group>
+  </rule>
+
+</group>
+
+<!--
+  Tuning checklist:
+  1. Add an exception block for known-good IaC service identities:
+       <if_sid>100001</if_sid>
+       <field name="aws.userIdentity.arn">role/cdk-deploy-role</field>
+       <description>IaC trust policy update (suppressed)</description>
+       <options>no_log</options>
+  2. Raise rule 100002 to level 14+ if you want it to page on-call directly.
+  3. Pair with Wazuh's active-response to auto-revoke the session by
+     calling sts:RevokeSessionsForRoleSession via a hook script.
+-->

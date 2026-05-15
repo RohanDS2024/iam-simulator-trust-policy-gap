@@ -1,0 +1,108 @@
+title: AWS Role Trust Policy Modification Followed by AssumeRole
+id: c8f1e5a3-9d47-4f8b-b6f4-3c7e9d2a8f12
+status: experimental
+description: |
+  Detects the canonical AWS trust-policy-rewrite privilege escalation pattern:
+  a principal with iam:UpdateAssumeRolePolicy modifies a role's trust policy,
+  then assumes that same role within a short window. The modification typically
+  removes an MFA condition, principal restriction, or source-IP lock — or adds
+  the attacker as a trusted principal.
+
+  This pattern is particularly relevant because aws iam simulate-principal-policy
+  does NOT evaluate role trust policies for sts:AssumeRole, so static policy
+  validation pipelines cannot catch the underlying control weakness. Detection
+  must happen at runtime via CloudTrail.
+
+  Maps to MITRE ATT&CK T1098.001 (Account Manipulation: Additional Cloud
+  Credentials) and T1548.005 (Abuse Elevation Control Mechanism: Temporary
+  Elevated Cloud Access).
+
+author: Rohan Devikoppa Shreedhara
+date: 2026/05/15
+references:
+  - https://github.com/RohanDS2024/iam-simulator-trust-policy-gap
+  - https://attack.mitre.org/techniques/T1098/001/
+  - https://attack.mitre.org/techniques/T1548/005/
+
+logsource:
+  product: aws
+  service: cloudtrail
+
+detection:
+  trust_policy_update:
+    eventSource: iam.amazonaws.com
+    eventName: UpdateAssumeRolePolicy
+  role_assumption:
+    eventSource: sts.amazonaws.com
+    eventName: AssumeRole
+  timeframe: 10m
+  condition: trust_policy_update | temporal_ordered role_assumption by userIdentity.arn, requestParameters.roleName
+
+fields:
+  - userIdentity.arn
+  - requestParameters.roleName
+  - requestParameters.policyDocument
+  - sourceIPAddress
+  - userAgent
+  - responseElements.assumedRoleUser.arn
+
+falsepositives:
+  - Legitimate trust-policy maintenance immediately followed by a session establishment by the same admin (rare; typically only during initial setup or migrations).
+  - Infrastructure-as-code tools (Terraform, CloudFormation, CDK) that update trust policies and then immediately test the new configuration. These usually run from CI/CD service identities and CI/CD source IPs — tune by excluding those.
+
+level: high
+
+tags:
+  - attack.privilege_escalation
+  - attack.t1098.001
+  - attack.t1548.005
+  - aws.cloudtrail
+  - cloud.iam
+
+---
+# Companion rule: single-event detection of the trust policy modification alone.
+# Lower fidelity but useful when the correlation engine can't keep state across events.
+
+title: AWS Role Trust Policy Modified (UpdateAssumeRolePolicy)
+id: f3a7b91c-2d65-4e80-a4f3-7b1c9e8d4f25
+status: experimental
+description: |
+  Single-event detection of iam:UpdateAssumeRolePolicy. Useful for SIEMs without
+  cross-event correlation. Recommended to alert at medium severity and enrich
+  with the principal's identity, the targeted role, and the new policy document
+  for review.
+
+  Pair with the AWS Role Trust Policy Modification Followed by AssumeRole
+  correlation rule above for higher-fidelity escalation detection.
+
+author: Rohan Devikoppa Shreedhara
+date: 2026/05/15
+
+logsource:
+  product: aws
+  service: cloudtrail
+
+detection:
+  selection:
+    eventSource: iam.amazonaws.com
+    eventName: UpdateAssumeRolePolicy
+  condition: selection
+
+fields:
+  - userIdentity.arn
+  - userIdentity.sessionContext.attributes.mfaAuthenticated
+  - requestParameters.roleName
+  - requestParameters.policyDocument
+  - sourceIPAddress
+  - userAgent
+
+falsepositives:
+  - Routine trust-policy maintenance by IaC pipelines.
+  - Cross-account role setup during onboarding.
+
+level: medium
+
+tags:
+  - attack.privilege_escalation
+  - attack.t1098.001
+  - aws.cloudtrail
