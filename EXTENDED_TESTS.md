@@ -16,7 +16,7 @@ Captured via [`capture-env.sh`](./capture-env.sh) on 2026-05-15T18:25:20Z.
 | Architecture | aarch64 (Apple Silicon via UTM emulation) |
 | Region | us-east-1 |
 | Partition | `aws` (commercial) |
-| Account | 233053488138 |
+| Account | 123456789012 |
 | Caller | IAM user `iamws-lab-default` |
 | Caller's identity policies | `AdministratorAccess` (AWS-managed) — only attached policy |
 | Caller's inline policies | none |
@@ -71,8 +71,8 @@ comparison rather than a single data point.
 
 --- Verdict B: live IAM engine (sts:AssumeRole) ---
 An error occurred (AccessDenied) when calling the AssumeRole operation: User:
-arn:aws:iam::233053488138:user/iamws-lab-default is not authorized to perform:
-sts:AssumeRole on resource: arn:aws:iam::233053488138:role/iamws-privileged-admin-role
+arn:aws:iam::123456789012:user/iamws-lab-default is not authorized to perform:
+sts:AssumeRole on resource: arn:aws:iam::123456789012:role/iamws-privileged-admin-role
 ```
 
 **Test 11 — IAM Access Analyzer comparing MFA-required vs MFA-removed trust policies:**
