@@ -9,11 +9,11 @@ Verified across **11 test cases** spanning four condition operators, three condi
 **Discovered:** May 2026
 ## Disclosure status
 
-- **GitHub issue**: [aws/aws-cli#10314](https://github.com/aws/aws-cli/issues/10314) — filed 2026-05-15
-- **AWS Support ticket**: _pending_
-- **AWS response**: _awaiting triage_
+- **GitHub issue**: [aws/aws-cli#10314](https://github.com/aws/aws-cli/issues/10314) — filed 2026-05-15. **Open**, triaged by AWS as `bug` (labels: `bug`, `iam`, `p3`, `service-api`) and assigned to an AWS maintainer.
+- **AWS Support ticket**: **closed** — AWS classified the behaviour as **known**.
+- **Position taken here**: AWS is right that the *non-support* is documented (see [What AWS documents](#what-aws-documents-and-why-this-is-still-a-finding) below). The finding is not "undocumented behaviour" — it is that the documented non-support **fails open** rather than erroring, and that no signal distinguishes an unevaluated trust policy from an evaluated one.
 
-Updates will be posted here as the disclosure progresses.
+Updates will be posted here as the disclosure progresses. _Last updated: 2026-07-30._
 **Author:** Rohan Devikoppa Shreedhara — [GitHub](https://github.com/RohanDS2024) · [LinkedIn](https://www.linkedin.com/in/rohan-devikoppa-shreedhara-97a192216/)
 
 ---
@@ -37,6 +37,22 @@ AWS re:Post documents this exception explicitly: *"Role trust policies and KMS k
 > Does `--resource-policy` correctly model role trust policies for `sts:Assume*` actions?
 
 Answer: no — and the divergence is testable against AWS's own Access Analyzer, which gets it right on the same input.
+
+### What AWS documents, and why this is still a finding
+
+The IAM API reference for [`SimulatePrincipalPolicy`](https://docs.aws.amazon.com/IAM/latest/APIReference/API_SimulatePrincipalPolicy.html) states, under **both** the `ResourceArns` and `ResourcePolicy` parameters:
+
+> "Simulation of resource-based policies isn't supported for IAM roles."
+
+A role trust policy is a resource-based policy on a role, so this sentence covers the case in this repository. **This finding is therefore not a claim of undocumented behaviour, and AWS Support was correct to classify the underlying limitation as known.** That should be stated plainly by anyone citing this work.
+
+What the documentation does *not* say is what happens when you try it anyway. Three things are worth separating:
+
+1. **It fails open, not closed.** "Isn't supported" would ordinarily imply an error, a warning, or an omitted result. Instead the API returns a confident `"allowed"` — including for a trust policy whose only statement is an explicit `Deny` naming the caller.
+2. **There is no signal to key on.** The discarded policy produces no `MissingContextValues`, no entry in `MatchedStatements`, and no field in the response distinguishing "trust policy evaluated and allowed" from "trust policy silently dropped". A caller cannot detect programmatically that its input was ignored — which is what makes this dangerous in automation rather than merely surprising at a terminal.
+3. **The parameter is still accepted and parsed.** `--resource-policy` validates the document and rejects malformed input (e.g. `Service`-type Principals are rejected at parse time), which reasonably signals to a caller that the policy is being used. It is not.
+
+The practical consequence stands regardless of documentation: a CI/CD guardrail built on `simulate-principal-policy` returns green for trust-policy regressions, and nothing in the response indicates the check was vacuous. The [workarounds](#workarounds) section lists what to use instead.
 
 ---
 
